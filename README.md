@@ -1,71 +1,45 @@
-# TaskPilot 🧭
+# StudyPilot 📚
 
-An AI agent that decides which tools to use, runs them, and answers using the results. Built with Python and the function calling (tool use) feature of LLMs.
+An AI study assistant for college students. Upload your notes (PDF, TXT or MD), then ask questions, get practice quizzes, revision sheets and a day-by-day study plan. Every answer comes from your own notes and shows its source, such as `[notes.pdf p.3]`.
 
-## What it can do
-- Get the current weather for any city (Open-Meteo API)
-- Look up facts on Wikipedia
-- Save and read personal notes
-- Chain several tools in one request, e.g. "Check the weather in Dindigul and save a note with the result"
+**Live demo:** add your Streamlit link here
 
 ## How it works
-1. The user sends a request.
-2. The LLM sees the request and the list of tools, and chooses one (or none).
-3. My code runs the chosen tool and sends the result back to the LLM.
-4. This repeats (maximum 5 steps) until the LLM gives a final answer.
 
-## Tech
-Python · Streamlit · OpenAI-compatible API (Groq, works with OpenAI) · Open-Meteo · Wikipedia API · python-dotenv
+1. **RAG (retrieval):** your notes are split into small overlapping pieces and stored in ChromaDB. For each question, the most relevant pieces are found and given to the LLM, so it answers from your notes instead of guessing.
+2. **Agent with tools:** the LLM decides which tool to use, my code runs it, and the result goes back to the LLM. This repeats (at most 5 steps) until it can answer.
+3. **Tools:** `search_notes`, `make_quiz`, `summarize_topic`, `make_study_plan`, `save_note`, `read_notes`, `get_current_time`.
+
+## Tech stack
+
+Python, Groq or OpenAI API (function calling), ChromaDB, pypdf, Streamlit, pytest
 
 ## Run it
-git clone https://github.com/princy21aj/taskpilot-agent
-cd taskpilot-agent
+
+```
+git clone https://github.com/princy21aj/studypilot-agent
+cd studypilot-agent
 python -m venv venv
 venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env   (then add your API key to .env)
-python app.py
-
-## Configuration
-The default provider is Groq. In `.env`, set `PROVIDER=groq` and add your
-`GROQ_API_KEY`. You can optionally change `GROQ_MODEL`; it defaults to
-`openai/gpt-oss-120b`.
-
-To use OpenAI, set `PROVIDER=openai` and add your `OPENAI_API_KEY`. You can
-optionally change `OPENAI_MODEL`; it defaults to `gpt-4o-mini`.
-
-Only the API key for the selected provider is used.
-To list the selected provider's available models, run `python -m scripts.list_models`.
-
-## Example
-You: Check the weather in Dindigul and save a note with the result.
-[step 1] tool: get_weather
-[step 2] tool: get_current_time
-[step 3] tool: save_note
-TaskPilot: Dindigul: 29.1 °C, humidity 72%. Note saved.
-
-## Run tests
-pytest
-
-## Live demo
-[Try TaskPilot](#) (demo link coming soon)
-
-## Run the web app
-Install dependencies, then run:
-
-```powershell
-streamlit run streamlit_app.py
+python -m pip install -r requirements.txt
+copy .env.example .env
 ```
 
-For Streamlit hosting, add `PROVIDER` and the selected provider's API key to
-Streamlit secrets (for example, `PROVIDER = "groq"` and
-`GROQ_API_KEY = "your-key"`). The web app keeps chat history and notes in each
-visitor's session. The command-line app continues to read its configuration
-from `.env` and save notes to `notes.txt`; its chat history lasts for the
-current run and can be cleared by typing `reset`.
+Add your Groq key to `.env` (never commit it), then:
 
-## What I learned
-Function calling, agent loops, API integration, error handling, short-term memory.
+```
+python -m streamlit run streamlit_app.py
+python -m pytest
+```
+
+Use Python 3.11 or 3.12. ChromaDB downloads a small embedding model the first time you ask a question.
+
+## Safety and limits
+
+- Each visitor gets a private in-memory index and notes file.
+- 20 messages per session, 10 MB per file, scanned (image-only) PDFs are not supported.
+- If the notes do not contain the answer, the assistant says so.
 
 ## Next steps
-Add more tools (web search, email) and long-term memory.
+
+Evaluate answer quality on real subjects, add OCR for scanned PDFs, and expose the tools as an MCP server.
