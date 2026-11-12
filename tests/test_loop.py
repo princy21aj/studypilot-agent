@@ -1,144 +1,59 @@
-from types import SimpleNamespace
+import json
+from types import SimpleNamespace as NS
 
-from agent.loop import run_agent
+import agent.loop as loop
+from tests.test_rag import make_index
 
 
-class FakeCompletions:
-    def __init__(self, responses):
-        self.responses = iter(responses)
+class FakeClient:
+    """Pretends to be the LLM: first asks for search_notes, then answers."""
+
+    def __init__(self):
+        self.calls = 0
+        self.chat = NS(completions=NS(create=self.create))
 
     def create(self, **kwargs):
-        return next(self.responses)
+        self.calls += 1
+        if self.calls == 1:
+            call = NS(id='1', function=NS(name='search_notes', arguments=json.dumps({'query': 'normalization'})))
+            msg = NS(content=None, tool_calls=[call])
+        else:
+            msg = NS(content='Normalization removes redundancy [dbms.txt p.1]', tool_calls=None)
+        return NS(choices=[NS(message=msg)])
 
 
-def test_run_agent_returns_tool_steps_and_uses_session_notes():
-    tool_call = SimpleNamespace(
-        id="call-1",
-        function=SimpleNamespace(name="save_note", arguments='{"text":"Buy milk"}'),
-    )
-    responses = [
-        SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[tool_call]))]
-        ),
-        SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(tool_calls=None, content="Note saved.")
-                )
-            ]
-        ),
-    ]
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=FakeCompletions(responses))
-    )
+def test_agent_uses_tool_then_answers(monkeypatch, tmp_path):
+    monkeypatch.setattr(loop, 'create_client', lambda: (FakeClient(), 'fake-model'))
+    index = make_index()
+    index.add_file('dbms.txt', b'normalization removes redundancy using normal forms')
     history = []
-    notes = []
-    tool_steps = []
-    tool_calls = []
-
-    answer, steps = run_agent(
-        "Save a note to buy milk.",
-        history,
-        notes=notes,
-        client=client,
-        model="test-model",
-        on_tool_step=tool_steps.append,
-        on_tool_call=lambda name, arguments: tool_calls.append((name, arguments)),
-    )
-
-    assert answer == "Note saved."
-    assert steps == ["Using tool: save_note"]
-    assert tool_steps == steps
-    assert tool_calls == [("save_note", {"text": "Buy milk"})]
-    assert "Buy milk" in notes[0]
-    assert [message["role"] for message in history] == ["user", "assistant"]
+    answer, steps = loop.run_agent('What is normalization?', index, history, tmp_path / 'n.txt')
+    assert 'redundancy' in answer
+    assert steps[0]['tool'] == 'search_notes'
+    assert '[dbms.txt p.1]' in steps[0]['result']
+    assert len(history) == 2
 
 
-def test_run_agent_can_return_tool_results():
-    tool_call = SimpleNamespace(
-        id="call-1",
-        function=SimpleNamespace(name="save_note", arguments='{"text":"Call Sam"}'),
-    )
-    responses = [
-        SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[tool_call]))]
-        ),
-        SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(tool_calls=None, content="Saved.")
-                )
-            ]
-        ),
-    ]
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=FakeCompletions(responses))
-    )
+def test_unknown_tool_does_not_crash(monkeypatch, tmp_path):
+    class BadClient(FakeClient):
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                call = NS(id='1', function=NS(name='nope', arguments='{}'))
+                return NS(choices=[NS(message=NS(content=None, tool_calls=[call]))])
+            return NS(choices=[NS(message=NS(content='ok', tool_calls=None))])
 
-    answer, steps, results = run_agent(
-        "Save a note to call Sam.",
-        [],
-        notes=[],
-        client=client,
-        model="test-model",
-        include_tool_results=True,
-    )
-
-    assert answer == "Saved."
-    assert steps == ["Using tool: save_note"]
-    assert results == [
-        {
-            "name": "save_note",
-            "args": {"text": "Call Sam"},
-            "result": "Note saved.",
-        }
-    ]
+    monkeypatch.setattr(loop, 'create_client', lambda: (BadClient(), 'm'))
+    answer, steps = loop.run_agent('hi', make_index(), [], tmp_path / 'n.txt')
+    assert answer == 'ok' and steps[0]['result'].startswith('Error')
 
 
-def test_run_agent_returns_structured_weather_result(monkeypatch):
-    weather_data = {
-        "city": "Chennai",
-        "country": "India",
-        "temperature": 31.5,
-        "humidity": 68,
-        "wind": 12.3,
-        "latitude": 13.08,
-        "longitude": 80.27,
-    }
-    monkeypatch.setattr("agent.loop.get_weather_data", lambda city: weather_data)
-    tool_call = SimpleNamespace(
-        id="call-weather",
-        function=SimpleNamespace(name="get_weather", arguments='{"city":"Chennai"}'),
-    )
-    responses = [
-        SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=[tool_call]))]
-        ),
-        SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(tool_calls=None, content="It is 31.5 °C.")
-                )
-            ]
-        ),
-    ]
-    client = SimpleNamespace(
-        chat=SimpleNamespace(completions=FakeCompletions(responses))
-    )
+def test_step_limit(monkeypatch, tmp_path):
+    class LoopClient(FakeClient):
+        def create(self, **kwargs):
+            call = NS(id='1', function=NS(name='get_current_time', arguments='{}'))
+            return NS(choices=[NS(message=NS(content=None, tool_calls=[call]))])
 
-    answer, _, results = run_agent(
-        "What's the weather in Chennai?",
-        [],
-        client=client,
-        model="test-model",
-        include_tool_results=True,
-    )
-
-    assert answer == "It is 31.5 °C."
-    assert results == [
-        {
-            "name": "get_weather",
-            "args": {"city": "Chennai"},
-            "result": weather_data,
-        }
-    ]
+    monkeypatch.setattr(loop, 'create_client', lambda: (LoopClient(), 'm'))
+    answer, steps = loop.run_agent('hi', make_index(), [], tmp_path / 'n.txt')
+    assert answer.startswith('Stopped') and len(steps) == loop.MAX_STEPS

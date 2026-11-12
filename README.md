@@ -1,45 +1,66 @@
+---
+title: StudyPilot API
+emoji: 📚
+sdk: docker
+app_port: 7860
+---
+
 # StudyPilot 📚
 
-An AI study assistant for college students. Upload your notes (PDF, TXT or MD), then ask questions, get practice quizzes, revision sheets and a day-by-day study plan. Every answer comes from your own notes and shows its source, such as `[notes.pdf p.3]`.
+An AI study assistant. Upload your notes (PDF, TXT or MD), then chat, take quizzes, flip flashcards and follow a study plan. Answers come from your own notes and show their source, such as `[notes.pdf p.3]`.
 
-**Live demo:** add your Streamlit link here
+**Live app:** add your Netlify link here
 
 ## How it works
 
-1. **RAG (retrieval):** your notes are split into small overlapping pieces and stored in ChromaDB. For each question, the most relevant pieces are found and given to the LLM, so it answers from your notes instead of guessing.
-2. **Agent with tools:** the LLM decides which tool to use, my code runs it, and the result goes back to the LLM. This repeats (at most 5 steps) until it can answer.
-3. **Tools:** `search_notes`, `make_quiz`, `summarize_topic`, `make_study_plan`, `save_note`, `read_notes`, `get_current_time`.
+1. **RAG:** notes are split into overlapping pieces, stored in ChromaDB, and searched for each question, so the LLM answers from your notes instead of guessing.
+2. **Agent with tools:** the LLM chooses a tool (`search_notes`, `make_quiz`, `summarize_topic`, `make_study_plan`, `save_note`, `read_notes`, `get_current_time`), my code runs it, and the result goes back to the LLM (max 5 steps).
+3. **Structured study tools:** quiz, flashcards and plan are generated as JSON and validated, so the frontend can show them as interactive cards.
 
-## Tech stack
-
-Python, Groq or OpenAI API (function calling), ChromaDB, pypdf, Streamlit, pytest
-
-## Run it
+## Structure
 
 ```
-git clone https://github.com/princy21aj/studypilot-agent
-cd studypilot-agent
+api.py              FastAPI backend (sessions, upload, chat, quiz, cards, plan)
+agent/              config, rag, toolkit, loop, study
+frontend/           React + Vite app (pastel UI)
+streamlit_app.py    first version of the UI (still works)
+tests/              pytest tests for the backend
+```
+
+## Run it locally
+
+Backend (Python 3.11 or 3.12):
+
+```
 python -m venv venv
 venv\Scripts\activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-api.txt
+copy .env.example .env      (add your GROQ_API_KEY)
+python -m uvicorn api:app --reload --port 8000
+```
+
+Frontend (in a second terminal):
+
+```
+cd frontend
+npm install
 copy .env.example .env
+npm run dev
 ```
 
-Add your Groq key to `.env` (never commit it), then:
+Open the address Vite prints (usually http://localhost:5173).
 
-```
-python -m streamlit run streamlit_app.py
-python -m pytest
-```
+Tests: `python -m pytest` (backend) and `cd frontend && npm test` (frontend).
 
-Use Python 3.11 or 3.12. ChromaDB downloads a small embedding model the first time you ask a question.
+## Deploy
+
+- **Backend:** Hugging Face Space (SDK: Docker). Add `GROQ_API_KEY` as a Space secret and `ALLOWED_ORIGINS` set to your Netlify URL.
+- **Frontend:** Netlify, base directory `frontend`, environment variable `VITE_API_URL` set to the Space URL.
 
 ## Safety and limits
 
-- Each visitor gets a private in-memory index and notes file.
-- 20 messages per session, 10 MB per file, scanned (image-only) PDFs are not supported.
-- If the notes do not contain the answer, the assistant says so.
+Each visitor gets a private in-memory index that is removed after 2 hours idle. Limits: 30 AI actions per session, 10 MB per file, 50 sessions at once. Scanned (image-only) PDFs are not supported.
 
 ## Next steps
 
-Evaluate answer quality on real subjects, add OCR for scanned PDFs, and expose the tools as an MCP server.
+Evaluate answers on real subjects, add OCR for scanned PDFs, and expose the tools as an MCP server.

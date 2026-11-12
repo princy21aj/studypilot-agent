@@ -1,4 +1,4 @@
-﻿import tempfile
+import tempfile
 import uuid
 from pathlib import Path
 
