@@ -109,7 +109,10 @@ function UploadPanel({ session, files, onUpload, onReset, busyFiles }) {
 function ChatTab({ hasNotes, messages, busy, onSend }) {
   const [text, setText] = useState('');
   const bottom = useRef(null);
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, busy]);
+  useEffect(() => {
+    if (!messages.length && !busy) return;
+    bottom.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, busy]);
   const submit = (e) => {
     e.preventDefault();
     if (!text.trim() || busy) return;

@@ -51,6 +51,17 @@ test('shows the app after the session starts', async () => {
   expect(await screen.findByText('Upload your notes. Chat, take quizzes, flip flashcards and tick off your study plan.')).toBeTruthy();
 });
 
+test('does not scroll on initial load but feature shortcuts still scroll to the workspace', async () => {
+  const scrollTargets = [];
+  window.HTMLElement.prototype.scrollIntoView = vi.fn(function () { scrollTargets.push(this.id); });
+  render(<App />);
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
+
+  expect(scrollTargets).toEqual([]);
+  fireEvent.click(screen.getAllByRole('button', { name: /Take Quizzes/ })[0]);
+  expect(scrollTargets).toContain('workspace');
+});
+
 test('tabs ask for notes before upload', async () => {
   render(<App />);
   fireEvent.click(await screen.findByText('📝 Quiz'));
