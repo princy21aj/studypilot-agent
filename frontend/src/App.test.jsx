@@ -43,7 +43,7 @@ afterEach(() => vi.restoreAllMocks());
 async function uploadNotes() {
   const input = document.querySelector('input[type=file]');
   fireEvent.change(input, { target: { files: [new File(['notes'], 'dbms.txt', { type: 'text/plain' })] } });
-  await screen.findByText(/dbms.txt/);
+  await screen.findByText('Notes uploaded');
 }
 
 test('shows the app after the session starts', async () => {
@@ -59,7 +59,7 @@ test('tabs ask for notes before upload', async () => {
 
 test('chat answers and shows the tool used', async () => {
   render(<App />);
-  await screen.findByText('StudyPilot');
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
   await uploadNotes();
   fireEvent.change(screen.getByPlaceholderText('Ask StudyPilot something...'), { target: { value: 'What is normalization?' } });
   fireEvent.click(screen.getByText('Send ✨'));
@@ -67,9 +67,51 @@ test('chat answers and shows the tool used', async () => {
   expect(await screen.findByText('🔧 search_notes')).toBeTruthy();
 });
 
+test('hero question uses the existing chat API', async () => {
+  render(<App />);
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
+  await uploadNotes();
+  fireEvent.change(screen.getByLabelText('Ask anything from your notes'), { target: { value: 'What is normalization?' } });
+  fireEvent.click(screen.getByRole('button', { name: /Go/ }));
+  expect(await screen.findByText('redundancy')).toBeTruthy();
+  expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect.stringContaining('/api/chat'),
+    expect.objectContaining({
+      headers: expect.objectContaining({ 'X-Session-Id': 's1' }),
+      body: JSON.stringify({ message: 'What is normalization?' }),
+    }),
+  );
+});
+
+test('feature shortcuts open the matching existing tool', async () => {
+  render(<App />);
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
+  fireEvent.click(screen.getAllByRole('button', { name: /Take Quizzes/ })[0]);
+  expect(screen.getByRole('button', { name: '📝 Quiz' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+test('dashboard reflects uploaded documents and real session activity', async () => {
+  render(<App />);
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
+  await uploadNotes();
+  expect(screen.getByRole('heading', { name: 'Notes & documents' })).toBeTruthy();
+  expect(screen.getByText('Notes uploaded')).toBeTruthy();
+  expect(screen.getByText('document ready to explore')).toBeTruthy();
+});
+
+test('theme toggle switches the application theme', async () => {
+  render(<App />);
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
+  const app = document.querySelector('.app');
+  fireEvent.click(screen.getByRole('button', { name: 'Switch to dark theme' }));
+  expect(app.getAttribute('data-theme')).toBe('dark');
+  fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+  expect(app.getAttribute('data-theme')).toBe('light');
+});
+
 test('quiz: pick, check, see score', async () => {
   render(<App />);
-  await screen.findByText('StudyPilot');
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
   await uploadNotes();
   fireEvent.click(screen.getByText('📝 Quiz'));
   fireEvent.change(screen.getByPlaceholderText(/Quiz topic/), { target: { value: 'normalization' } });
@@ -78,11 +120,13 @@ test('quiz: pick, check, see score', async () => {
   fireEvent.click(screen.getByText('Check my answers 🎯'));
   expect(await screen.findByText('Amazing work! 🎉')).toBeTruthy();
   expect(screen.getByText('💡 Normal forms.')).toBeTruthy();
+  expect(screen.getByText('100%')).toBeTruthy();
+  expect(screen.getByText('Quiz completed')).toBeTruthy();
 });
 
 test('flashcards: flip and next', async () => {
   render(<App />);
-  await screen.findByText('StudyPilot');
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
   await uploadNotes();
   fireEvent.click(screen.getByText('🃏 Flashcards'));
   fireEvent.change(screen.getByPlaceholderText(/Flashcard topic/), { target: { value: 'normal forms' } });
@@ -96,7 +140,7 @@ test('flashcards: flip and next', async () => {
 
 test('plan: tick tasks updates progress', async () => {
   render(<App />);
-  await screen.findByText('StudyPilot');
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
   await uploadNotes();
   fireEvent.click(screen.getByText('🗓️ Study plan'));
   fireEvent.click(screen.getByText('Build my plan ✨'));
@@ -106,7 +150,7 @@ test('plan: tick tasks updates progress', async () => {
 
 test('a backend error shows a friendly message', async () => {
   render(<App />);
-  await screen.findByText('StudyPilot');
+  await screen.findByRole('link', { name: 'StudyPilot AI home' });
   globalThis.fetch = vi.fn(() => reply({ detail: 'Please upload a file first.' }, 400));
   await uploadNotesIgnoringResult();
 });
